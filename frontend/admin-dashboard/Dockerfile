@@ -10,6 +10,9 @@ COPY pnpm-lock.yaml* ./
 
 # Install pnpm and dependencies
 RUN npm install -g pnpm
+# Copy package files
+COPY package.json pnpm-lock.yaml ./
+
 RUN pnpm install --frozen-lockfile
 
 # Copy source code
