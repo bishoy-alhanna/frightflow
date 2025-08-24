@@ -1,0 +1,920 @@
+openapi: 3.1.0
+info:
+  title: Freight Platform - Quotation Service API
+  description: |
+    The Quotation Service provides dynamic pricing and quote management capabilities for the digital freight platform.
+    
+    ## Features
+    - Dynamic pricing calculation based on configurable rules
+    - Quote generation with PDF output
+    - Quote acceptance and lifecycle management
+    - Integration with caching and event systems
+    - Role-based access control
+    
+    ## Authentication
+    This API uses Bearer token authentication. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer <your-token>
+    ```
+    
+    ## Rate Limiting
+    API requests are rate-limited to prevent abuse. Current limits:
+    - 100 requests per minute per IP
+    - 1000 requests per hour per authenticated user
+    
+    ## Idempotency
+    POST and PUT operations support idempotency keys to prevent duplicate operations.
+    Include the `Idempotency-Key` header with a unique value.
+  version: 1.0.0
+  contact:
+    name: Freight Platform API Support
+    email: api-support@freightplatform.com
+    url: https://docs.freightplatform.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.freightplatform.com/api/v1
+    description: Production server
+  - url: https://staging-api.freightplatform.com/api/v1
+    description: Staging server
+  - url: http://localhost:8101/api/v1
+    description: Local development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /quotes:
+    post:
+      summary: Create a new quote
+      description: |
+        Creates a new freight quote with dynamic pricing calculation.
+        
+        The pricing engine will:
+        1. Look up applicable pricing rules for the service and route
+        2. Calculate base price based on cargo details
+        3. Apply surcharges and accessorial services
+        4. Generate a PDF quote document
+        5. Publish a quote.issued event
+        
+        ## Idempotency
+        This endpoint supports idempotency. Include an `Idempotency-Key` header
+        to ensure the same quote is not created multiple times.
+        
+        ## SLA
+        - Target response time: p95 ≤ 2s (cached), ≤ 5s (cold)
+        - Availability: 99.9% under normal load
+      operationId: createQuote
+      tags:
+        - Quotes
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: Unique key to ensure idempotent operations
+          required: false
+          schema:
+            type: string
+            format: uuid
+            example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+            examples:
+              fcl_quote:
+                summary: FCL Quote Example
+                value:
+                  mode: "SEA"
+                  service: "FCL"
+                  origin: "SGSIN"
+                  destination: "EGALY"
+                  containers:
+                    - type: "40HC"
+                      count: 1
+                  cargo:
+                    weightKg: 8200
+                    volumeM3: 58
+                  accessorials:
+                    - "FUEL"
+                    - "PORT_FEES"
+                  customer_id: "CUST123"
+              lcl_quote:
+                summary: LCL Quote Example
+                value:
+                  mode: "SEA"
+                  service: "LCL"
+                  origin: "SGSIN"
+                  destination: "USNYC"
+                  cargo:
+                    weightKg: 1500
+                    volumeM3: 2.5
+                  accessorials:
+                    - "FUEL"
+                    - "DOCUMENTATION"
+                  customer_id: "CUST456"
+      responses:
+        '201':
+          description: Quote created successfully
+          headers:
+            X-Correlation-ID:
+              description: Correlation ID for request tracking
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      summary: List quotes
+      description: |
+        Retrieves a paginated list of quotes with optional filtering.
+        
+        ## Access Control
+        - Admin/Ops/Sales: Can view all quotes
+        - Customers: Can only view their own quotes
+        
+        ## Performance
+        - Results are cached for 5 minutes
+        - Maximum 100 quotes per page
+      operationId: listQuotes
+      tags:
+        - Quotes
+      parameters:
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: customer_id
+          in: query
+          description: Filter by customer ID
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by quote status
+          required: false
+          schema:
+            $ref: '#/components/schemas/QuoteStatus'
+      responses:
+        '200':
+          description: List of quotes retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /quotes/{quote_id}:
+    get:
+      summary: Get quote by ID
+      description: |
+        Retrieves a specific quote by its ID.
+        
+        ## Access Control
+        - Admin/Ops/Sales: Can view any quote
+        - Customers: Can only view their own quotes
+        
+        ## Caching
+        Quote details are cached for 5 minutes to improve performance.
+      operationId: getQuote
+      tags:
+        - Quotes
+      parameters:
+        - name: quote_id
+          in: path
+          description: Unique quote identifier
+          required: true
+          schema:
+            type: string
+            pattern: '^Q-[A-Z0-9]{8}$'
+            example: "Q-ABC12345"
+      responses:
+        '200':
+          description: Quote retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /quotes/{quote_id}/accept:
+    put:
+      summary: Accept a quote
+      description: |
+        Accepts a quote, changing its status to ACCEPTED.
+        
+        ## Business Rules
+        - Only valid (non-expired) quotes can be accepted
+        - Once accepted, a quote cannot be modified
+        - Accepting a quote publishes a quote.accepted event
+        
+        ## Access Control
+        - Admin/Ops/Sales: Can accept any quote
+        - Customers: Can only accept their own quotes
+      operationId: acceptQuote
+      tags:
+        - Quotes
+      parameters:
+        - name: quote_id
+          in: path
+          description: Unique quote identifier
+          required: true
+          schema:
+            type: string
+            pattern: '^Q-[A-Z0-9]{8}$'
+            example: "Q-ABC12345"
+      responses:
+        '200':
+          description: Quote accepted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+        '400':
+          description: Quote cannot be accepted (expired or invalid)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /quotes/{quote_id}/pdf:
+    get:
+      summary: Get quote PDF download URL
+      description: |
+        Generates a pre-signed URL for downloading the quote PDF.
+        
+        ## PDF Generation
+        - PDFs are generated asynchronously when quotes are created
+        - If PDF doesn't exist, it will be generated on-demand
+        - Pre-signed URLs expire after 24 hours
+        
+        ## Access Control
+        Same as quote retrieval - customers can only access their own quote PDFs.
+      operationId: getQuotePdf
+      tags:
+        - Quotes
+      parameters:
+        - name: quote_id
+          in: path
+          description: Unique quote identifier
+          required: true
+          schema:
+            type: string
+            pattern: '^Q-[A-Z0-9]{8}$'
+            example: "Q-ABC12345"
+      responses:
+        '200':
+          description: PDF download URL generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  download_url:
+                    type: string
+                    format: uri
+                    description: Pre-signed URL for PDF download
+                    example: "https://storage.freightplatform.com/quotes/2024/01/Q-ABC12345.pdf?signature=..."
+                  expires_in:
+                    type: integer
+                    description: URL expiration time in seconds
+                    example: 86400
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /pricing-rules:
+    get:
+      summary: List pricing rules
+      description: |
+        Retrieves pricing rules for quote calculation.
+        
+        ## Access Control
+        Only admin and ops users can access pricing rules.
+        
+        ## Usage
+        This endpoint is primarily used for administrative purposes
+        to view and manage pricing configurations.
+      operationId: listPricingRules
+      tags:
+        - Pricing Rules
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: service
+          in: query
+          description: Filter by service type
+          schema:
+            $ref: '#/components/schemas/ServiceType'
+        - name: lane_key
+          in: query
+          description: Filter by lane (route)
+          schema:
+            type: string
+            example: "SGSIN-EGALY"
+      responses:
+        '200':
+          description: Pricing rules retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingRuleList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create pricing rule
+      description: |
+        Creates a new pricing rule for quote calculation.
+        
+        ## Access Control
+        Only admin users can create pricing rules.
+        
+        ## Versioning
+        New pricing rules automatically get a version number.
+        Historical quotes remain immutable and use their original pricing.
+      operationId: createPricingRule
+      tags:
+        - Pricing Rules
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PricingRuleRequest'
+      responses:
+        '201':
+          description: Pricing rule created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /health:
+    get:
+      summary: Health check
+      description: Basic health check endpoint
+      operationId: healthCheck
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /ready:
+    get:
+      summary: Readiness check
+      description: Readiness check including database connectivity
+      operationId: readinessCheck
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from the authentication service.
+        Include in the Authorization header as: Bearer <token>
+
+  schemas:
+    QuoteRequest:
+      type: object
+      required:
+        - mode
+        - service
+        - origin
+        - destination
+      properties:
+        mode:
+          $ref: '#/components/schemas/TransportMode'
+        service:
+          $ref: '#/components/schemas/ServiceType'
+        origin:
+          type: string
+          description: Origin port/airport code
+          pattern: '^[A-Z]{5}$'
+          example: "SGSIN"
+        destination:
+          type: string
+          description: Destination port/airport code
+          pattern: '^[A-Z]{5}$'
+          example: "EGALY"
+        containers:
+          type: array
+          description: Container requirements (for FCL service)
+          items:
+            $ref: '#/components/schemas/ContainerRequirement'
+        cargo:
+          $ref: '#/components/schemas/CargoDetails'
+        accessorials:
+          type: array
+          description: Additional services required
+          items:
+            $ref: '#/components/schemas/AccessorialService'
+        customer_id:
+          type: string
+          description: Customer identifier
+          example: "CUST123"
+
+    Quote:
+      type: object
+      properties:
+        quote_id:
+          type: string
+          description: Unique quote identifier
+          pattern: '^Q-[A-Z0-9]{8}$'
+          example: "Q-ABC12345"
+        customer_id:
+          type: string
+          nullable: true
+          example: "CUST123"
+        mode:
+          $ref: '#/components/schemas/TransportMode'
+        service:
+          $ref: '#/components/schemas/ServiceType'
+        origin:
+          type: string
+          example: "SGSIN"
+        destination:
+          type: string
+          example: "EGALY"
+        route_key:
+          type: string
+          example: "SGSIN-EGALY"
+        cargo_details:
+          $ref: '#/components/schemas/CargoDetails'
+        containers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContainerRequirement'
+        accessorials:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessorialService'
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: "USD"
+        base_amount:
+          type: number
+          format: decimal
+          example: 2150.00
+        surcharges:
+          type: array
+          items:
+            $ref: '#/components/schemas/Surcharge'
+        total_amount:
+          type: number
+          format: decimal
+          example: 2270.00
+        status:
+          $ref: '#/components/schemas/QuoteStatus'
+        valid_until:
+          type: string
+          format: date-time
+          example: "2025-09-05T23:59:59Z"
+        issued_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-08-29T10:30:00Z"
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_valid:
+          type: boolean
+          description: Whether the quote is still valid
+        is_expired:
+          type: boolean
+          description: Whether the quote has expired
+        items:
+          type: array
+          description: Detailed line items
+          items:
+            $ref: '#/components/schemas/QuoteItem'
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-08-29T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-08-29T10:30:00Z"
+
+    QuoteItem:
+      type: object
+      properties:
+        description:
+          type: string
+          example: "SEA FCL - 1x40HC from SGSIN to EGALY"
+        quantity:
+          type: number
+          format: decimal
+          example: 1
+        unit_price:
+          type: number
+          format: decimal
+          example: 2150.00
+        total_price:
+          type: number
+          format: decimal
+          example: 2150.00
+        item_type:
+          type: string
+          enum: [BASE, SURCHARGE, ACCESSORIAL]
+          example: "BASE"
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: "USD"
+
+    ContainerRequirement:
+      type: object
+      required:
+        - type
+        - count
+      properties:
+        type:
+          type: string
+          enum: [20GP, 40GP, 40HC, 45HC]
+          example: "40HC"
+        count:
+          type: integer
+          minimum: 1
+          example: 1
+
+    CargoDetails:
+      type: object
+      properties:
+        weightKg:
+          type: number
+          format: decimal
+          minimum: 0
+          example: 8200
+        volumeM3:
+          type: number
+          format: decimal
+          minimum: 0
+          example: 58
+
+    Surcharge:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "FUEL"
+        description:
+          type: string
+          example: "Fuel Surcharge"
+        amount:
+          type: number
+          format: decimal
+          example: 120.00
+        type:
+          type: string
+          enum: [fixed, percentage]
+          example: "fixed"
+
+    TransportMode:
+      type: string
+      enum: [SEA, AIR]
+      example: "SEA"
+
+    ServiceType:
+      type: string
+      enum: [FCL, LCL, AIR]
+      example: "FCL"
+
+    AccessorialService:
+      type: string
+      enum: [FUEL, PORT_FEES, DOCUMENTATION, SECURITY, INSURANCE]
+      example: "FUEL"
+
+    QuoteStatus:
+      type: string
+      enum: [DRAFT, ISSUED, ACCEPTED, EXPIRED]
+      example: "ISSUED"
+
+    PricingRule:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        service:
+          $ref: '#/components/schemas/ServiceType'
+        lane_key:
+          type: string
+          example: "SGSIN-EGALY"
+        formula:
+          type: object
+          description: Pricing calculation formula
+          example:
+            base_rates:
+              "20GP": "1800"
+              "40GP": "2200"
+              "40HC": "2400"
+            surcharges:
+              "FUEL": "120"
+              "PORT_FEES": "150"
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: "USD"
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+          nullable: true
+        version:
+          type: integer
+          example: 1
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PricingRuleRequest:
+      type: object
+      required:
+        - service
+        - lane_key
+        - formula
+      properties:
+        service:
+          $ref: '#/components/schemas/ServiceType'
+        lane_key:
+          type: string
+          example: "SGSIN-EGALY"
+        formula:
+          type: object
+          description: Pricing calculation formula
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          default: "USD"
+        effective_from:
+          type: string
+          format: date-time
+          description: When the rule becomes effective (defaults to now)
+        effective_to:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the rule expires (null for no expiration)
+
+    QuoteList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quote'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    PricingRuleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PricingRule'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 150
+        pages:
+          type: integer
+          example: 8
+        has_prev:
+          type: boolean
+          example: false
+        has_next:
+          type: boolean
+          example: true
+        prev_num:
+          type: integer
+          nullable: true
+        next_num:
+          type: integer
+          nullable: true
+          example: 2
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "healthy"
+        service:
+          type: string
+          example: "quotation-service"
+        version:
+          type: string
+          example: "1.0.0"
+        timestamp:
+          type: string
+          example: "2025-08-29T10:30:00Z"
+
+    ReadinessStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "ready"
+        database:
+          type: string
+          example: "connected"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Bad Request"
+        message:
+          type: string
+          example: "Field 'mode' is required"
+        correlation_id:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: Unauthorized - authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Forbidden:
+      description: Forbidden - insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+tags:
+  - name: Quotes
+    description: Quote management operations
+  - name: Pricing Rules
+    description: Pricing rule management (admin only)
+  - name: System
+    description: System health and monitoring endpoints
+

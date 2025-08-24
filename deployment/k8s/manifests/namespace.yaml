@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: freight-platform
+  labels:
+    name: freight-platform
+    app.kubernetes.io/name: freight-platform
+    app.kubernetes.io/version: "1.0.0"
+

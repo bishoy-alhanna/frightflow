@@ -1,0 +1,728 @@
+asyncapi: 3.0.0
+info:
+  title: Freight Platform Event System
+  version: 1.0.0
+  description: |
+    Event-driven architecture for the digital freight platform using Kafka/Redpanda.
+    
+    ## Event Flow
+    
+    The platform uses events to maintain consistency and enable loose coupling between services:
+    
+    1. **Quote Events**: Published by quotation service when quotes are issued or accepted
+    2. **Shipment Events**: Published by booking service for shipment lifecycle updates
+    3. **Document Events**: Published when documents are attached to shipments
+    4. **Notification Events**: Published to trigger email/SMS notifications
+    
+    ## Event Ordering
+    
+    Events within the same partition (keyed by entity ID) are processed in order.
+    Cross-partition ordering is not guaranteed.
+    
+    ## Retry and Dead Letter Queues
+    
+    Failed event processing is retried with exponential backoff.
+    After 3 retries, events are moved to dead letter queues for manual investigation.
+    
+    ## Schema Evolution
+    
+    Event schemas follow backward compatibility rules:
+    - New optional fields can be added
+    - Existing fields cannot be removed or changed
+    - Field types cannot be changed
+  contact:
+    name: Platform Team
+    email: platform@freightplatform.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  production:
+    host: kafka.freightplatform.com:9092
+    protocol: kafka
+    description: Production Kafka cluster
+    security:
+      - saslScram: []
+  
+  staging:
+    host: staging-kafka.freightplatform.com:9092
+    protocol: kafka
+    description: Staging Kafka cluster
+    security:
+      - saslScram: []
+  
+  development:
+    host: localhost:9092
+    protocol: kafka
+    description: Local development Redpanda
+
+defaultContentType: application/json
+
+channels:
+  quotations:
+    address: quotations
+    description: |
+      Quote lifecycle events including issuance and acceptance.
+      
+      **Partitioning**: Events are partitioned by quote_id to ensure ordering.
+      **Retention**: 7 days
+      **Cleanup Policy**: Delete
+    messages:
+      quote.issued:
+        $ref: '#/components/messages/QuoteIssued'
+      quote.accepted:
+        $ref: '#/components/messages/QuoteAccepted'
+
+  shipments:
+    address: shipments
+    description: |
+      Shipment lifecycle and milestone events.
+      
+      **Partitioning**: Events are partitioned by shipment_id to ensure ordering.
+      **Retention**: 30 days
+      **Cleanup Policy**: Delete
+    messages:
+      shipment.created:
+        $ref: '#/components/messages/ShipmentCreated'
+      shipment.updated:
+        $ref: '#/components/messages/ShipmentUpdated'
+      shipment.milestone:
+        $ref: '#/components/messages/ShipmentMilestone'
+
+  documents:
+    address: documents
+    description: |
+      Document attachment and processing events.
+      
+      **Partitioning**: Events are partitioned by shipment_id.
+      **Retention**: 90 days
+      **Cleanup Policy**: Delete
+    messages:
+      document.attached:
+        $ref: '#/components/messages/DocumentAttached'
+      document.processed:
+        $ref: '#/components/messages/DocumentProcessed'
+
+  notifications:
+    address: notifications
+    description: |
+      Notification requests for email, SMS, and push notifications.
+      
+      **Partitioning**: Events are partitioned by recipient to ensure ordering.
+      **Retention**: 7 days
+      **Cleanup Policy**: Delete
+    messages:
+      notify.requested:
+        $ref: '#/components/messages/NotifyRequested'
+      notify.delivered:
+        $ref: '#/components/messages/NotifyDelivered'
+
+operations:
+  publishQuoteIssued:
+    action: send
+    channel:
+      $ref: '#/channels/quotations'
+    summary: Publish quote issued event
+    description: Published when a new quote is issued to a customer
+    messages:
+      - $ref: '#/components/messages/QuoteIssued'
+
+  publishQuoteAccepted:
+    action: send
+    channel:
+      $ref: '#/channels/quotations'
+    summary: Publish quote accepted event
+    description: Published when a customer accepts a quote
+    messages:
+      - $ref: '#/components/messages/QuoteAccepted'
+
+  subscribeQuoteEvents:
+    action: receive
+    channel:
+      $ref: '#/channels/quotations'
+    summary: Subscribe to quote events
+    description: Booking service subscribes to quote events to create shipments
+    messages:
+      - $ref: '#/components/messages/QuoteIssued'
+      - $ref: '#/components/messages/QuoteAccepted'
+
+  publishShipmentCreated:
+    action: send
+    channel:
+      $ref: '#/channels/shipments'
+    summary: Publish shipment created event
+    description: Published when a new shipment is created from an accepted quote
+    messages:
+      - $ref: '#/components/messages/ShipmentCreated'
+
+  publishShipmentUpdated:
+    action: send
+    channel:
+      $ref: '#/channels/shipments'
+    summary: Publish shipment updated event
+    description: Published when shipment details are updated
+    messages:
+      - $ref: '#/components/messages/ShipmentUpdated'
+
+  publishShipmentMilestone:
+    action: send
+    channel:
+      $ref: '#/channels/shipments'
+    summary: Publish shipment milestone event
+    description: Published when a shipment reaches a new milestone
+    messages:
+      - $ref: '#/components/messages/ShipmentMilestone'
+
+  subscribeShipmentEvents:
+    action: receive
+    channel:
+      $ref: '#/channels/shipments'
+    summary: Subscribe to shipment events
+    description: Multiple services subscribe to shipment events for different purposes
+    messages:
+      - $ref: '#/components/messages/ShipmentCreated'
+      - $ref: '#/components/messages/ShipmentUpdated'
+      - $ref: '#/components/messages/ShipmentMilestone'
+
+  publishDocumentAttached:
+    action: send
+    channel:
+      $ref: '#/channels/documents'
+    summary: Publish document attached event
+    description: Published when a document is attached to a shipment
+    messages:
+      - $ref: '#/components/messages/DocumentAttached'
+
+  publishNotifyRequested:
+    action: send
+    channel:
+      $ref: '#/channels/notifications'
+    summary: Publish notification request
+    description: Published to request sending of notifications
+    messages:
+      - $ref: '#/components/messages/NotifyRequested'
+
+  subscribeNotificationRequests:
+    action: receive
+    channel:
+      $ref: '#/channels/notifications'
+    summary: Subscribe to notification requests
+    description: Notification service processes notification requests
+    messages:
+      - $ref: '#/components/messages/NotifyRequested'
+
+components:
+  messages:
+    QuoteIssued:
+      name: quote.issued
+      title: Quote Issued
+      summary: A new quote has been issued
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        $ref: '#/components/schemas/QuoteIssuedPayload'
+      examples:
+        - name: FCL Quote Issued
+          summary: Example of FCL quote being issued
+          headers:
+            event_type: quote.issued
+            correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+            source_service: quotation-service
+          payload:
+            quote_id: "Q-ABC12345"
+            customer_id: "CUST123"
+            total_amount: 2270.00
+            currency: "USD"
+            valid_until: "2025-09-05T23:59:59Z"
+            service: "FCL"
+            route: "SGSIN-EGALY"
+
+    QuoteAccepted:
+      name: quote.accepted
+      title: Quote Accepted
+      summary: A quote has been accepted by a customer
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        $ref: '#/components/schemas/QuoteAcceptedPayload'
+      examples:
+        - name: Quote Accepted
+          summary: Example of quote acceptance
+          headers:
+            event_type: quote.accepted
+            correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+            source_service: quotation-service
+          payload:
+            quote_id: "Q-ABC12345"
+            customer_id: "CUST123"
+            total_amount: 2270.00
+            currency: "USD"
+            accepted_at: "2025-08-29T14:30:00Z"
+
+    ShipmentCreated:
+      name: shipment.created
+      title: Shipment Created
+      summary: A new shipment has been created
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        $ref: '#/components/schemas/ShipmentCreatedPayload'
+
+    ShipmentUpdated:
+      name: shipment.updated
+      title: Shipment Updated
+      summary: Shipment details have been updated
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        $ref: '#/components/schemas/ShipmentUpdatedPayload'
+      examples:
+        - name: Shipment Status Update
+          summary: Example of shipment status change
+          headers:
+            event_type: shipment.updated
+            correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+            source_service: booking-service
+          payload:
+            shipment_id: "SH-XYZ789"
+            quote_id: "Q-ABC12345"
+            customer_id: "CUST123"
+            status: "IN_TRANSIT"
+            updated_fields:
+              - "status"
+              - "current_location"
+            current_location: "SGSIN"
+
+    ShipmentMilestone:
+      name: shipment.milestone
+      title: Shipment Milestone
+      summary: Shipment has reached a new milestone
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        $ref: '#/components/schemas/ShipmentMilestonePayload'
+
+    DocumentAttached:
+      name: document.attached
+      title: Document Attached
+      summary: A document has been attached to a shipment
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        $ref: '#/components/schemas/DocumentAttachedPayload'
+
+    DocumentProcessed:
+      name: document.processed
+      title: Document Processed
+      summary: A document has been processed and validated
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        $ref: '#/components/schemas/DocumentProcessedPayload'
+
+    NotifyRequested:
+      name: notify.requested
+      title: Notification Requested
+      summary: A notification has been requested
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        $ref: '#/components/schemas/NotifyRequestedPayload'
+      examples:
+        - name: Milestone Notification
+          summary: Example of milestone notification request
+          headers:
+            event_type: notify.requested
+            correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+            source_service: booking-service
+          payload:
+            recipient: "customer@example.com"
+            channel: "email"
+            template: "shipment_milestone"
+            data:
+              shipment_id: "SH-XYZ789"
+              milestone: "PICKED_UP"
+              customer_name: "John Doe"
+
+    NotifyDelivered:
+      name: notify.delivered
+      title: Notification Delivered
+      summary: A notification has been successfully delivered
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      payload:
+        $ref: '#/components/schemas/NotifyDeliveredPayload'
+
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        event_type:
+          type: string
+          description: Type of the event
+          example: "quote.issued"
+        correlation_id:
+          type: string
+          format: uuid
+          description: Correlation ID for request tracking
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        source_service:
+          type: string
+          description: Service that published the event
+          example: "quotation-service"
+        event_id:
+          type: string
+          format: uuid
+          description: Unique event identifier
+          example: "660e8400-e29b-41d4-a716-446655440001"
+
+    BaseEventPayload:
+      type: object
+      properties:
+        event_type:
+          type: string
+        event_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        correlation_id:
+          type: string
+          format: uuid
+        source_service:
+          type: string
+        version:
+          type: string
+          default: "1.0"
+      required:
+        - event_type
+        - event_id
+        - timestamp
+        - correlation_id
+        - source_service
+
+    QuoteIssuedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventPayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                quote_id:
+                  type: string
+                  example: "Q-ABC12345"
+                customer_id:
+                  type: string
+                  example: "CUST123"
+                total_amount:
+                  type: number
+                  format: decimal
+                  example: 2270.00
+                currency:
+                  type: string
+                  example: "USD"
+                valid_until:
+                  type: string
+                  format: date-time
+                  example: "2025-09-05T23:59:59Z"
+                service:
+                  type: string
+                  example: "FCL"
+                route:
+                  type: string
+                  example: "SGSIN-EGALY"
+              required:
+                - quote_id
+                - total_amount
+                - currency
+                - valid_until
+
+    QuoteAcceptedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventPayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                quote_id:
+                  type: string
+                  example: "Q-ABC12345"
+                customer_id:
+                  type: string
+                  example: "CUST123"
+                total_amount:
+                  type: number
+                  format: decimal
+                  example: 2270.00
+                currency:
+                  type: string
+                  example: "USD"
+                accepted_at:
+                  type: string
+                  format: date-time
+                  example: "2025-08-29T14:30:00Z"
+              required:
+                - quote_id
+                - accepted_at
+
+    ShipmentCreatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventPayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                shipment_id:
+                  type: string
+                  example: "SH-XYZ789"
+                quote_id:
+                  type: string
+                  example: "Q-ABC12345"
+                customer_id:
+                  type: string
+                  example: "CUST123"
+                status:
+                  type: string
+                  example: "PICKUP_SCHEDULED"
+                service:
+                  type: string
+                  example: "FCL"
+                route:
+                  type: string
+                  example: "SGSIN-EGALY"
+              required:
+                - shipment_id
+                - quote_id
+                - status
+
+    ShipmentUpdatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventPayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                shipment_id:
+                  type: string
+                  example: "SH-XYZ789"
+                quote_id:
+                  type: string
+                  example: "Q-ABC12345"
+                customer_id:
+                  type: string
+                  example: "CUST123"
+                status:
+                  type: string
+                  example: "IN_TRANSIT"
+                updated_fields:
+                  type: array
+                  items:
+                    type: string
+                  example: ["status", "current_location"]
+                current_location:
+                  type: string
+                  example: "SGSIN"
+                previous_status:
+                  type: string
+                  example: "PICKED_UP"
+              required:
+                - shipment_id
+                - updated_fields
+
+    ShipmentMilestonePayload:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventPayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                shipment_id:
+                  type: string
+                  example: "SH-XYZ789"
+                milestone_code:
+                  type: string
+                  example: "PICKED_UP"
+                milestone_name:
+                  type: string
+                  example: "Cargo Picked Up"
+                location:
+                  type: string
+                  example: "SGSIN"
+                occurred_at:
+                  type: string
+                  format: date-time
+                  example: "2025-08-30T08:00:00Z"
+                details:
+                  type: object
+                  additionalProperties: true
+              required:
+                - shipment_id
+                - milestone_code
+                - occurred_at
+
+    DocumentAttachedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventPayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                shipment_id:
+                  type: string
+                  example: "SH-XYZ789"
+                document_id:
+                  type: string
+                  example: "DOC-123456"
+                document_type:
+                  type: string
+                  example: "BILL_OF_LADING"
+                file_name:
+                  type: string
+                  example: "bill_of_lading.pdf"
+                file_size:
+                  type: integer
+                  example: 1048576
+                content_type:
+                  type: string
+                  example: "application/pdf"
+                storage_path:
+                  type: string
+                  example: "documents/2025/08/SH-XYZ789/bill_of_lading.pdf"
+                checksum:
+                  type: string
+                  example: "d41d8cd98f00b204e9800998ecf8427e"
+              required:
+                - shipment_id
+                - document_id
+                - document_type
+                - file_name
+                - storage_path
+
+    DocumentProcessedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventPayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                document_id:
+                  type: string
+                  example: "DOC-123456"
+                shipment_id:
+                  type: string
+                  example: "SH-XYZ789"
+                processing_status:
+                  type: string
+                  enum: [SUCCESS, FAILED, PARTIAL]
+                  example: "SUCCESS"
+                extracted_data:
+                  type: object
+                  additionalProperties: true
+                validation_errors:
+                  type: array
+                  items:
+                    type: string
+              required:
+                - document_id
+                - processing_status
+
+    NotifyRequestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventPayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                recipient:
+                  type: string
+                  example: "customer@example.com"
+                channel:
+                  type: string
+                  enum: [email, sms, push]
+                  example: "email"
+                template:
+                  type: string
+                  example: "shipment_milestone"
+                priority:
+                  type: string
+                  enum: [low, normal, high, urgent]
+                  default: "normal"
+                  example: "normal"
+                data:
+                  type: object
+                  additionalProperties: true
+                  example:
+                    shipment_id: "SH-XYZ789"
+                    customer_name: "John Doe"
+                    milestone: "PICKED_UP"
+                scheduled_at:
+                  type: string
+                  format: date-time
+                  description: When to send the notification (optional, defaults to immediate)
+              required:
+                - recipient
+                - channel
+                - template
+                - data
+
+    NotifyDeliveredPayload:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventPayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                notification_id:
+                  type: string
+                  example: "NOTIF-789123"
+                recipient:
+                  type: string
+                  example: "customer@example.com"
+                channel:
+                  type: string
+                  example: "email"
+                template:
+                  type: string
+                  example: "shipment_milestone"
+                delivery_status:
+                  type: string
+                  enum: [delivered, failed, bounced]
+                  example: "delivered"
+                delivered_at:
+                  type: string
+                  format: date-time
+                  example: "2025-08-30T08:05:00Z"
+                provider_response:
+                  type: object
+                  additionalProperties: true
+              required:
+                - notification_id
+                - recipient
+                - channel
+                - delivery_status
+
+  securitySchemes:
+    saslScram:
+      type: scramSha256
+      description: SASL/SCRAM-SHA-256 authentication for Kafka
+

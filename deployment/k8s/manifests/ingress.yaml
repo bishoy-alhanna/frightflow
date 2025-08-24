@@ -1,0 +1,118 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: freight-platform-ingress
+  namespace: freight-platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - api.freightplatform.local
+    - quotation.freightplatform.local
+    secretName: freight-platform-tls
+  rules:
+  - host: api.freightplatform.local
+    http:
+      paths:
+      - path: /api/v1/quotes
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      - path: /api/v1/bookings
+        pathType: Prefix
+        backend:
+          service:
+            name: booking-service
+            port:
+              number: 8102
+      - path: /api/v1/customers
+        pathType: Prefix
+        backend:
+          service:
+            name: crm-service
+            port:
+              number: 8103
+      - path: /api/v1/vendors
+        pathType: Prefix
+        backend:
+          service:
+            name: vendor-service
+            port:
+              number: 8104
+      - path: /api/v1/notifications
+        pathType: Prefix
+        backend:
+          service:
+            name: notify-service
+            port:
+              number: 8105
+      - path: /api/v1/analytics
+        pathType: Prefix
+        backend:
+          service:
+            name: analytics-service
+            port:
+              number: 8106
+  
+  - host: quotation.freightplatform.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+
+---
+# Network Policy for additional security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: freight-platform-netpol
+  namespace: freight-platform
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: freight-platform
+  - ports:
+    - protocol: TCP
+      port: 8101
+    - protocol: TCP
+      port: 8102
+    - protocol: TCP
+      port: 8103
+    - protocol: TCP
+      port: 8104
+    - protocol: TCP
+      port: 8105
+    - protocol: TCP
+      port: 8106
+  egress:
+  - {}  # Allow all egress traffic
+

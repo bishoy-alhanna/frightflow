@@ -1,0 +1,112 @@
+repositories:
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
+  - name: minio
+    url: https://charts.min.io/
+  - name: redpanda
+    url: https://charts.redpanda.com/
+
+environments:
+  development:
+    values:
+      - values/development.yaml
+  staging:
+    values:
+      - values/staging.yaml
+  production:
+    values:
+      - values/production.yaml
+
+releases:
+  # PostgreSQL HA
+  - name: postgresql-ha
+    namespace: freight-platform
+    chart: bitnami/postgresql-ha
+    version: "~11.9.0"
+    values:
+      - values/postgresql-ha.yaml
+    needs:
+      - freight-platform/namespace
+
+  # Redis HA
+  - name: redis-ha
+    namespace: freight-platform
+    chart: bitnami/redis
+    version: "~18.1.0"
+    values:
+      - values/redis.yaml
+    needs:
+      - freight-platform/namespace
+
+  # MinIO
+  - name: minio
+    namespace: freight-platform
+    chart: minio/minio
+    version: "~5.0.0"
+    values:
+      - values/minio.yaml
+    needs:
+      - freight-platform/namespace
+
+  # Redpanda (Kafka)
+  - name: redpanda
+    namespace: freight-platform
+    chart: redpanda/redpanda
+    version: "~5.7.0"
+    values:
+      - values/redpanda.yaml
+    needs:
+      - freight-platform/namespace
+
+  # Prometheus Stack
+  - name: prometheus-stack
+    namespace: monitoring
+    chart: prometheus-community/kube-prometheus-stack
+    version: "~51.0.0"
+    values:
+      - values/prometheus-stack.yaml
+    needs:
+      - monitoring/namespace
+
+  # Grafana
+  - name: grafana
+    namespace: monitoring
+    chart: grafana/grafana
+    version: "~6.60.0"
+    values:
+      - values/grafana.yaml
+    needs:
+      - monitoring/namespace
+      - monitoring/prometheus-stack
+
+  # Keycloak (OIDC Provider)
+  - name: keycloak
+    namespace: freight-platform
+    chart: bitnami/keycloak
+    version: "~16.1.0"
+    values:
+      - values/keycloak.yaml
+    needs:
+      - freight-platform/namespace
+      - freight-platform/postgresql-ha
+
+hooks:
+  - events: ["presync"]
+    showlogs: true
+    command: "kubectl"
+    args: ["apply", "-f", "../manifests/namespace.yaml"]
+
+  - events: ["presync"]
+    showlogs: true
+    command: "kubectl"
+    args: ["create", "namespace", "monitoring", "--dry-run=client", "-o", "yaml"]
+
+  - events: ["postsync"]
+    showlogs: true
+    command: "kubectl"
+    args: ["apply", "-f", "../manifests/config-secrets.yaml"]
+

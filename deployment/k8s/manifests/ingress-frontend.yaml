@@ -1,0 +1,176 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: freight-platform-frontend-ingress
+  namespace: freight-platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: freight.local
+    http:
+      paths:
+      # Customer Portal (default)
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: customer-portal
+            port:
+              number: 80
+      
+      # Admin Dashboard
+      - path: /admin
+        pathType: Prefix
+        backend:
+          service:
+            name: admin-dashboard
+            port:
+              number: 80
+      
+      # API Routes - Quotation Service
+      - path: /api/quotes
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      
+      # API Routes - Authentication
+      - path: /api/auth
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      
+      # API Routes - Admin endpoints
+      - path: /api/admin
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      
+      # API Routes - User management
+      - path: /api/users
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      
+      # API Routes - Ports and services
+      - path: /api/ports
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      
+      - path: /api/services
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+
+---
+# TLS Configuration (for production)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: freight-platform-frontend-ingress-tls
+  namespace: freight-platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - freight.yourdomain.com
+    secretName: freight-platform-frontend-tls
+  rules:
+  - host: freight.yourdomain.com
+    http:
+      paths:
+      # Same paths as above
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: customer-portal
+            port:
+              number: 80
+      - path: /admin
+        pathType: Prefix
+        backend:
+          service:
+            name: admin-dashboard
+            port:
+              number: 80
+      - path: /api/quotes
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      - path: /api/auth
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      - path: /api/admin
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      - path: /api/users
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      - path: /api/ports
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+      - path: /api/services
+        pathType: Prefix
+        backend:
+          service:
+            name: quotation-service
+            port:
+              number: 8101
+

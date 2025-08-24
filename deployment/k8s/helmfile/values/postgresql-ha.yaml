@@ -1,0 +1,66 @@
+global:
+  postgresql:
+    database: freight_db
+    username: freight
+    existingSecret: freight-secrets
+    secretKeys:
+      adminPasswordKey: DATABASE_PASSWORD
+      userPasswordKey: DATABASE_PASSWORD
+
+postgresql:
+  replicaCount: 3
+  
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+  
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+  
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      namespace: monitoring
+
+pgpool:
+  replicaCount: 2
+  
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+  
+  service:
+    type: ClusterIP
+    port: 5432
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      namespace: monitoring
+
+# Backup configuration
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention: "7d"
+
+# Security
+networkPolicy:
+  enabled: true
+  allowExternal: false
+
+podSecurityPolicy:
+  enabled: true
+
