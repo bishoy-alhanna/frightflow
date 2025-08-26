@@ -1,5 +1,5 @@
 # Multi-stage build for React admin dashboard
-FROM node:20-alpine AS builder
+FROM node:20-alpine
 
 # Set working directory
 WORKDIR /app
