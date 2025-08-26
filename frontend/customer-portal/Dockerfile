@@ -1,5 +1,5 @@
 # Multi-stage build for React customer portal
-FROM node:20-alpine As builder
+FROM node:20-alpine
 
 # Set working directory
 WORKDIR /app
