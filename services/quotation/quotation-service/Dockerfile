@@ -1,5 +1,5 @@
 # Multi-stage build for production optimization
-FROM python:3.11-slim as builder
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
