@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY services/quotation/quotation-service/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
@@ -33,8 +33,9 @@ COPY --from=builder /root/.local /root/.local
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH
 
-# Copy application code
-COPY . .
+# Copy shared libraries and application code
+COPY shared/ ./shared/
+COPY services/quotation/quotation-service/ ./
 
 # Create non-root user for security
 RUN groupadd -r freight && useradd -r -g freight freight

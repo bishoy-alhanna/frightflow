@@ -8,9 +8,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.exceptions import BadRequest, NotFound, Conflict
 
-# Add the project root to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-
 from shared.config import Config
 from shared.database import Database
 from shared.cache import Cache

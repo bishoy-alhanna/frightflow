@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY services/booking/booking-service/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
@@ -29,9 +29,9 @@ RUN apt-get update && apt-get install -y \
 # Copy Python packages from builder
 COPY --from=builder /root/.local /root/.local
 
-# Copy application code
-COPY src/ ./src/
-COPY . .
+# Copy shared libraries and application code
+COPY shared/ ./shared/
+COPY services/booking/booking-service/ ./
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser

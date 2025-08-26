@@ -5,9 +5,6 @@ Handles dynamic pricing, quote generation, and quote acceptance.
 import os
 import sys
 
-# Add shared libraries to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
-
 from flask import Flask, send_from_directory
 from shared.config import create_base_app, setup_health_endpoints
 from shared.database import init_db, db

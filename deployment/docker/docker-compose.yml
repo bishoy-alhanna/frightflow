@@ -99,8 +99,8 @@ services:
   # Quotation Service
   quotation-service:
     build:
-      context: ../../services/quotation/quotation-service
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: services/quotation/quotation-service/Dockerfile
     container_name: freight-quotation
     environment:
       - FLASK_ENV=development
@@ -140,8 +140,8 @@ services:
   # Booking Service (placeholder)
   booking-service:
     build:
-      context: ../../services/booking
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: services/booking/booking-service/Dockerfile
     container_name: freight-booking
     environment:
       - FLASK_ENV=development
@@ -172,8 +172,8 @@ services:
   # CRM Service (placeholder)
   crm-service:
     build:
-      context: ../../services/crm
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: services/crm/crm-service/Dockerfile
     container_name: freight-crm
     environment:
       - FLASK_ENV=development
@@ -195,8 +195,8 @@ services:
   # Vendor Service (placeholder)
   vendor-service:
     build:
-      context: ../../services/vendor
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: services/vendor/vendor-service/Dockerfile
     container_name: freight-vendor
     environment:
       - FLASK_ENV=development
@@ -218,8 +218,8 @@ services:
   # Notification Service (placeholder)
   notify-service:
     build:
-      context: ../../services/notify
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: services/notifications/notifications-service/Dockerfile
     container_name: freight-notify
     environment:
       - FLASK_ENV=development
@@ -244,8 +244,8 @@ services:
   # Analytics Service (placeholder)
   analytics-service:
     build:
-      context: ../../services/analytics
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: services/analytics/analytics-service/Dockerfile
     container_name: freight-analytics
     environment:
       - FLASK_ENV=development
