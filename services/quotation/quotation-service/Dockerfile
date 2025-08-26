@@ -35,6 +35,9 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY shared/ ./shared/
 COPY services/quotation/quotation-service/ ./
 
+# Debug: List contents to verify copy
+RUN ls -la /app/ && ls -la /app/shared/ && ls -la /app/src/
+
 # Create non-root user for security
 RUN groupadd -r freight && useradd -r -g freight freight
 RUN chown -R freight:freight /app
